@@ -10,55 +10,51 @@ st.set_page_config(
 # --- Custom Styling (CSS) ---
 st.markdown("""
     <style>
-    /* Import a nice font */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-
-    .success-box { 
-        padding: 20px; 
-        background-color: #d1e7dd; 
-        color: #0f5132; 
-        border-radius: 8px; 
-        border: 1px solid #badbcc;
-        margin-top: 10px;
-    }
-    .warning-box { 
-        padding: 20px; 
-        background-color: #fff3cd; 
-        color: #664d03; 
-        border-radius: 8px; 
-        border: 1px solid #ffecb5;
-        margin-top: 10px;
-    }
-    .error-box { 
-        padding: 20px; 
-        background-color: #f8d7da; 
-        color: #842029; 
-        border-radius: 8px; 
-        border: 1px solid #f5c2c7;
-        margin-top: 10px;
-    }
+    .success-box { padding: 20px; background-color: #d1e7dd; color: #0f5132; border-radius: 8px; border: 1px solid #badbcc; margin-top: 10px; }
+    .warning-box { padding: 20px; background-color: #fff3cd; color: #664d03; border-radius: 8px; border: 1px solid #ffecb5; margin-top: 10px; }
+    .error-box { padding: 20px; background-color: #f8d7da; color: #842029; border-radius: 8px; border: 1px solid #f5c2c7; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2025 LSC Data Constants ---
-LIMITS = {
+# --- 2025 LSC Official Data (Exact Tables from Federal Register) ---
+# Source: 45 CFR Part 1611 Appendix A (Jan 2025)
+# We use a lookup table for sizes 1-8 to account for rounding variances.
+OFFICIAL_DATA = {
     "48 Contiguous States & DC": {
-        "base125": 19563, "inc125": 6875, 
-        "base200": 31300, "inc200": 11000
+        "125%": [0, 19563, 26438, 33313, 40188, 47063, 53938, 60813, 67688], # Index 0 is dummy, Index 1 is size 1
+        "200%": [0, 31300, 42300, 53300, 64300, 75300, 86300, 97300, 108300],
+        "inc125": 6875, # Add-on for size 9+
+        "inc200": 11000 # Add-on for size 9+
     },
     "Alaska": {
-        "base125": 24438, "inc125": 8600, 
-        "base200": 39100, "inc200": 13760
+        "125%": [0, 24438, 33038, 41638, 50238, 58838, 67438, 76038, 84638],
+        "200%": [0, 39100, 52860, 66620, 80380, 94140, 107900, 121660, 135420],
+        "inc125": 8600,
+        "inc200": 13760
     },
     "Hawaii": {
-        "base125": 22488, "inc125": 7913, 
-        "base200": 35980, "inc200": 12660
+        "125%": [0, 22488, 30400, 38313, 46225, 54138, 62050, 69963, 77875],
+        "200%": [0, 35980, 48640, 61300, 73960, 86620, 99280, 111940, 124600],
+        "inc125": 7913,
+        "inc200": 12660
     }
 }
+
+# --- Helper Function to Get Limit ---
+def get_limit(location, size, limit_type):
+    data = OFFICIAL_DATA[location]
+    # For households 1-8, use the exact table value
+    if size <= 8:
+        return data[limit_type][size]
+    # For households 9+, use the size 8 value + increments
+    else:
+        base = data[limit_type][8]
+        increment = data["inc125"] if limit_type == "125%" else data["inc200"]
+        extra_people = size - 8
+        return base + (extra_people * increment)
 
 # --- App Header ---
 st.title("⚖️ LSC Financial Eligibility (2025)")
@@ -69,7 +65,7 @@ st.info("Attorney Work Product: For estimation only. Verify all documents.")
 col1, col2 = st.columns(2)
 
 with col1:
-    location = st.selectbox("Location", options=LIMITS.keys())
+    location = st.selectbox("Location", options=OFFICIAL_DATA.keys())
     household_size = st.number_input("Household Size", min_value=1, value=1, step=1)
 
 with col2:
@@ -84,17 +80,15 @@ if is_dv_victim:
 # --- Logic Engine ---
 if st.button("Calculate Eligibility", type="primary"):
     
-    # 1. Get Data for Location
-    data = LIMITS[location]
+    # 1. Get Exact Thresholds from Lookup Table
+    threshold_125 = get_limit(location, household_size, "125%")
+    threshold_200 = get_limit(location, household_size, "200%")
     
-    # 2. Calculate Thresholds
-    threshold_125 = data["base125"] + ((household_size - 1) * data["inc125"])
-    threshold_200 = data["base200"] + ((household_size - 1) * data["inc200"])
-    
-    # 3. Calculate Asset Limit
+    # 2. Calculate Asset Limit
+    # Asset limits (Part 1611) typically use $5k base + $1k/person logic, which is consistent.
     asset_limit = 5000 + ((household_size - 1) * 1000)
     
-    # 4. Check Assets (Pass if DV victim OR assets under limit)
+    # 3. Check Assets (Pass if DV victim OR assets under limit)
     asset_pass = is_dv_victim or (assets <= asset_limit)
     
     st.divider()
